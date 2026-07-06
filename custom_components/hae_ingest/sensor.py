@@ -1,7 +1,13 @@
 from __future__ import annotations
 
-from homeassistant.components.sensor import RestoreSensor, SensorStateClass
+from homeassistant.components import webhook
+from homeassistant.components.sensor import (
+    RestoreSensor,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_WEBHOOK_ID, EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -30,8 +36,7 @@ async def async_setup_entry(
     ]
     for entity in restored:
         entities[entity.meta["key"]] = entity
-    if restored:
-        async_add_entities(restored)
+    async_add_entities([WebhookUrlSensor(hass, entry), *restored])
 
     @callback
     def _handle_records(records) -> None:
@@ -64,6 +69,31 @@ async def async_setup_entry(
     entry.async_on_unload(
         async_dispatcher_connect(hass, SIGNAL_UPDATE, _handle_records)
     )
+
+
+class WebhookUrlSensor(SensorEntity):
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_name = "Webhook URL"
+    _attr_icon = "mdi:webhook"
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        webhook_id = entry.data[CONF_WEBHOOK_ID]
+        self._attr_unique_id = f"{entry.entry_id}_webhook_url"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="Health Auto Export",
+            manufacturer="HealthyApps",
+            model="Health Auto Export",
+        )
+        path = f"/api/webhook/{webhook_id}"
+        try:
+            url = webhook.async_generate_url(hass, webhook_id)
+        except Exception:
+            url = path
+        self._attr_native_value = url[:255]
+        self._attr_extra_state_attributes = {"webhook_id": webhook_id, "path": path}
 
 
 class HealthAutoExportSensor(RestoreSensor):
