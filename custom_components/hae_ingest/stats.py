@@ -29,6 +29,10 @@ async def async_import_metric_statistics(hass: HomeAssistant, series_list) -> No
             await _import_series(hass, series)
         except Exception:
             _LOGGER.exception("Failed to import statistics for %s", series["key"])
+    try:
+        await get_instance(hass).async_block_till_done()
+    except Exception:
+        _LOGGER.debug("Could not wait for recorder queue drain", exc_info=True)
 
 
 async def _import_series(hass: HomeAssistant, series) -> None:
@@ -108,10 +112,13 @@ async def _sum_stats(hass: HomeAssistant, statistic_id: str, buckets) -> list[St
 
 
 def _hourly_buckets(points):
-    buckets: dict = {}
+    unique = {}
     for when, value in points:
         if when.tzinfo is None:
             when = when.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+        unique[when.timestamp()] = (when, value)
+    buckets: dict = {}
+    for when, value in unique.values():
         start = when.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
         buckets.setdefault(start, []).append(value)
     return dict(sorted(buckets.items()))
