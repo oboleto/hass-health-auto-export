@@ -1,0 +1,13 @@
+{
+  "domain": "hae_ingest",
+  "name": "Health Auto Export Ingest",
+  "codeowners": ["@oboleto"],
+  "config_flow": true,
+  "dependencies": ["webhook"],
+  "after_dependencies": ["recorder"],
+  "documentation": "https://github.com/oboleto/hass-health-auto-export",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/oboleto/hass-health-auto-export/issues",
+  "version": "0.1.0"
+}

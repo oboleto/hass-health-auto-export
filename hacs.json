@@ -1,0 +1,5 @@
+{
+  "name": "Health Auto Export",
+  "render_readme": true,
+  "homeassistant": "2024.1.0"
+}

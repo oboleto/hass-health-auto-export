@@ -1,0 +1,47 @@
+{
+  "data": {
+    "metrics": [
+      {
+        "name": "step_count",
+        "units": "count",
+        "data": [
+          { "qty": 8500, "date": "2026-07-06 14:30:00 -0300", "source": "iPhone" }
+        ]
+      },
+      {
+        "name": "heart_rate",
+        "units": "bpm",
+        "data": [
+          { "date": "2026-07-06 14:30:00 -0300", "Min": 65, "Avg": 72, "Max": 85 }
+        ]
+      },
+      {
+        "name": "sleep_analysis",
+        "units": "hr",
+        "data": [
+          {
+            "date": "2026-07-06",
+            "totalSleep": 7.5,
+            "core": 3.5,
+            "deep": 1.5,
+            "rem": 2.0,
+            "inBed": 8.0,
+            "sleepStart": "2026-07-05 23:00:00 -0300",
+            "sleepEnd": "2026-07-06 06:30:00 -0300"
+          }
+        ]
+      }
+    ],
+    "workouts": [
+      {
+        "id": "test-1",
+        "name": "Running",
+        "start": "2026-07-06 07:00:00 -0300",
+        "end": "2026-07-06 07:30:00 -0300",
+        "duration": 1800,
+        "activeEnergyBurned": { "qty": 350, "units": "kcal" },
+        "distance": { "qty": 5.2, "units": "km" }
+      }
+    ]
+  }
+}
