@@ -63,13 +63,16 @@ async def _import_series(hass: HomeAssistant, series) -> None:
         ]
     if stats:
         _LOGGER.debug(
-            "Importing %d statistic rows for %s (%s .. %s)",
+            "Importing %d statistic rows for %s as %s (%s .. %s)",
             len(stats),
             statistic_id,
+            "sum" if is_sum else "mean",
             stats[0]["start"],
             stats[-1]["start"],
         )
         async_add_external_statistics(hass, metadata, stats)
+    else:
+        _LOGGER.debug("No statistic rows to import for %s", statistic_id)
 
 
 async def _sum_stats(hass: HomeAssistant, statistic_id: str, buckets) -> list[StatisticData]:
@@ -85,6 +88,12 @@ async def _sum_stats(hass: HomeAssistant, statistic_id: str, buckets) -> list[St
 
     result = await get_instance(hass).async_add_executor_job(_fetch_existing)
     existing = result.get(statistic_id, []) if result else []
+    _LOGGER.debug(
+        "%s: %d new hourly buckets, %d existing rows in recorder",
+        statistic_id,
+        len(new_totals),
+        len(existing),
+    )
 
     baseline = 0.0
     merged = dict(new_totals)

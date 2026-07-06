@@ -14,7 +14,13 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later
 
 from .const import DOMAIN, EVENT_PREFIX, SIGNAL_UPDATE
-from .parser import COLLECTIONS, metric_series, parse_collection, parse_metrics
+from .parser import (
+    COLLECTIONS,
+    metric_series,
+    parse_collection,
+    parse_metrics,
+    slugify,
+)
 from .stats import async_import_metric_statistics
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,10 +58,35 @@ async def handle_webhook(hass: HomeAssistant, webhook_id: str, request) -> web.R
     if not isinstance(payload, dict):
         return web.Response(status=400, text="unexpected payload")
     data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    if _LOGGER.isEnabledFor(logging.DEBUG):
+        _LOGGER.debug(
+            "Webhook payload received: %s",
+            {k: len(v) for k, v in data.items() if isinstance(v, list)} or list(data),
+        )
     records = []
     if isinstance(data.get("metrics"), list):
         records.extend(parse_metrics(data["metrics"]))
-        _buffer_metric_series(hass, metric_series(data["metrics"]))
+        series_list = metric_series(data["metrics"])
+        for series in series_list:
+            _LOGGER.debug(
+                "Metric %s (%s): %d points, %s .. %s",
+                series["key"],
+                series.get("unit"),
+                len(series["points"]),
+                series["points"][0][0],
+                series["points"][-1][0],
+            )
+        series_keys = {s["key"] for s in series_list}
+        if "sleep_total" in series_keys:
+            series_keys.add("sleep_analysis")
+        skipped = {
+            slugify(m.get("name") or "unknown")
+            for m in data["metrics"]
+            if isinstance(m, dict)
+        } - series_keys
+        if skipped:
+            _LOGGER.debug("Metrics without importable points (no date/qty parsed): %s", sorted(skipped))
+        _buffer_metric_series(hass, series_list)
     for collection_key, singular in COLLECTIONS.items():
         items = data.get(collection_key)
         if isinstance(items, list) and items:
@@ -65,7 +96,12 @@ async def handle_webhook(hass: HomeAssistant, webhook_id: str, request) -> web.R
             records.extend(collection_records)
     if records:
         async_dispatcher_send(hass, SIGNAL_UPDATE, records)
-    _LOGGER.debug("Webhook %s processed: %d sensor records", webhook_id, len(records))
+    if _LOGGER.isEnabledFor(logging.DEBUG):
+        _LOGGER.debug(
+            "Webhook processed, %d sensor records: %s",
+            len(records),
+            {r["key"]: r["value"] for r in records},
+        )
     return web.json_response({"sensors_updated": len(records)})
 
 
@@ -91,7 +127,10 @@ def _buffer_metric_series(hass: HomeAssistant, series_list) -> None:
         pending = domain_data["series"]
         domain_data["series"] = {}
         flush_list = [{"key": key, **value} for key, value in pending.items()]
-        _LOGGER.debug("Flushing %d buffered statistic series", len(flush_list))
+        _LOGGER.debug(
+            "Flushing statistics buffer: %s",
+            {s["key"]: len(s["points"]) for s in flush_list},
+        )
         async with domain_data["lock"]:
             await async_import_metric_statistics(hass, flush_list)
 
