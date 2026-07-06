@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import timezone
+from datetime import datetime, timezone
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
-    get_last_statistics,
+    statistics_during_period,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -17,6 +17,8 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 SUM_UNITS = {"count", "kcal", "kJ", "km", "mi", "m", "ft", "yd", "L", "mL", "IU", "g", "mg", "µg"}
+
+EPOCH = datetime(1970, 1, 2, tzinfo=timezone.utc)
 
 
 async def async_import_metric_statistics(hass: HomeAssistant, series_list) -> None:
@@ -56,24 +58,50 @@ async def _import_series(hass: HomeAssistant, series) -> None:
             for start, values in buckets.items()
         ]
     if stats:
+        _LOGGER.debug(
+            "Importing %d statistic rows for %s (%s .. %s)",
+            len(stats),
+            statistic_id,
+            stats[0]["start"],
+            stats[-1]["start"],
+        )
         async_add_external_statistics(hass, metadata, stats)
 
 
 async def _sum_stats(hass: HomeAssistant, statistic_id: str, buckets) -> list[StatisticData]:
-    last = await get_instance(hass).async_add_executor_job(
-        get_last_statistics, hass, 1, statistic_id, True, {"sum"}
-    )
-    running = 0.0
-    last_start_ts = None
-    rows = last.get(statistic_id) if last else None
-    if rows:
-        running = rows[0].get("sum") or 0.0
-        last_start_ts = rows[0].get("start")
-    stats = []
-    for start, values in buckets.items():
-        if last_start_ts is not None and start.timestamp() <= last_start_ts:
+    new_totals = {
+        start.timestamp(): (start, sum(values)) for start, values in buckets.items()
+    }
+    earliest_new = min(new_totals)
+
+    def _fetch_existing():
+        return statistics_during_period(
+            hass, EPOCH, None, {statistic_id}, "hour", None, {"state", "sum"}
+        )
+
+    result = await get_instance(hass).async_add_executor_job(_fetch_existing)
+    existing = result.get(statistic_id, []) if result else []
+
+    baseline = 0.0
+    merged = dict(new_totals)
+    for row in existing:
+        ts = row.get("start")
+        if isinstance(ts, datetime):
+            ts = ts.timestamp()
+        if ts is None:
             continue
-        total = sum(values)
+        if ts < earliest_new:
+            row_sum = row.get("sum")
+            if row_sum is not None:
+                baseline = row_sum
+            continue
+        if ts not in merged:
+            merged[ts] = (dt_util.utc_from_timestamp(ts), row.get("state") or 0.0)
+
+    running = baseline
+    stats = []
+    for ts in sorted(merged):
+        start, total = merged[ts]
         running += total
         stats.append(StatisticData(start=start, state=total, sum=running))
     return stats
