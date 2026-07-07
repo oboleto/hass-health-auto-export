@@ -223,12 +223,13 @@ def parse_collection(collection_key, items, merges=None):
                 slug = merges.get(slug, slug)
             groups[slug] = (item_name, state, events[idx])
             if collection_key == "medications":
-                logs.setdefault(slug, []).append(
-                    {
-                        "date": raw.get("date") or raw.get("scheduledDate"),
-                        "status": raw.get("status"),
-                    }
-                )
+                log_entry = {
+                    "date": raw.get("date") or raw.get("scheduledDate"),
+                    "status": raw.get("status"),
+                }
+                if _is_number(raw.get("dosage")):
+                    log_entry["dosage"] = raw["dosage"]
+                logs.setdefault(slug, []).append(log_entry)
         for slug, (item_name, state, item_attrs) in groups.items():
             extra = {"item_name": item_name}
             if slug in logs:
@@ -322,11 +323,13 @@ def medication_series(items, merges=None):
         when = parse_date(item.get("date") or item.get("scheduledDate"))
         if when is None:
             continue
+        dosage = item.get("dosage")
+        amount = float(dosage) if _is_number(dosage) and dosage > 0 else 1.0
         slug = slugify(name)
         if merges:
             slug = merges.get(slug, slug)
         group = groups.setdefault(slug, {"name": name.strip(), "points": []})
-        group["points"].append((when, 1.0))
+        group["points"].append((when, amount))
     series = []
     for slug, group in groups.items():
         group["points"].sort(key=lambda p: _safe_ts(p[0]))
