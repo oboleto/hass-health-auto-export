@@ -252,6 +252,36 @@ def metric_series(metrics):
     return series
 
 
+def medication_series(items):
+    groups = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        status = item.get("status")
+        if isinstance(status, str) and status.lower() != "taken":
+            continue
+        name = item.get("displayText") or item.get("nickname") or item.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        when = parse_date(item.get("date") or item.get("scheduledDate"))
+        if when is None:
+            continue
+        group = groups.setdefault(slugify(name), {"name": name.strip(), "points": []})
+        group["points"].append((when, 1.0))
+    series = []
+    for slug, group in groups.items():
+        group["points"].sort(key=lambda p: _safe_ts(p[0]))
+        series.append(
+            {
+                "key": f"medication_{slug}",
+                "name": f"{group['name']} (doses)",
+                "unit": "count",
+                "points": group["points"],
+            }
+        )
+    return series
+
+
 def _safe_ts(when):
     try:
         return when.timestamp()
