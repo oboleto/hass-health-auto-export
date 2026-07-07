@@ -13,12 +13,13 @@ from homeassistant.helpers.config_entry_flow import webhook_async_remove_entry
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later
 
-from .const import DOMAIN, EVENT_PREFIX, SIGNAL_UPDATE
+from .const import DOMAIN, EVENT_PREFIX, OPTION_MEDICATION_MERGES, SIGNAL_UPDATE
 from .parser import (
     COLLECTIONS,
     medication_series,
     metric_series,
     parse_collection,
+    parse_merge_rules,
     parse_metrics,
     slugify,
 )
@@ -91,12 +92,13 @@ async def handle_webhook(hass: HomeAssistant, webhook_id: str, request) -> web.R
     for collection_key, singular in COLLECTIONS.items():
         items = data.get(collection_key)
         if isinstance(items, list) and items:
-            events, collection_records = parse_collection(collection_key, items)
+            merges = _medication_merges(hass) if collection_key == "medications" else None
+            events, collection_records = parse_collection(collection_key, items, merges)
             for event_data in events:
                 hass.bus.async_fire(f"{EVENT_PREFIX}{singular}", event_data)
             records.extend(collection_records)
             if collection_key == "medications":
-                _buffer_metric_series(hass, medication_series(items))
+                _buffer_metric_series(hass, medication_series(items, merges))
     if records:
         async_dispatcher_send(hass, SIGNAL_UPDATE, records)
     if _LOGGER.isEnabledFor(logging.DEBUG):
@@ -106,6 +108,14 @@ async def handle_webhook(hass: HomeAssistant, webhook_id: str, request) -> web.R
             {r["key"]: r["value"] for r in records},
         )
     return web.json_response({"sensors_updated": len(records)})
+
+
+def _medication_merges(hass: HomeAssistant):
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        rules = parse_merge_rules(entry.options.get(OPTION_MEDICATION_MERGES))
+        if rules:
+            return rules
+    return None
 
 
 def _buffer_metric_series(hass: HomeAssistant, series_list) -> None:

@@ -178,7 +178,20 @@ def compact_item(item):
     return out
 
 
-def parse_collection(collection_key, items):
+def parse_merge_rules(text):
+    rules = {}
+    for line in (text or "").splitlines():
+        if "=" not in line:
+            continue
+        source, _, target = line.partition("=")
+        source = slugify(source.strip())
+        target = slugify(target.strip())
+        if source and target and source != target:
+            rules[source] = target
+    return rules
+
+
+def parse_collection(collection_key, items, merges=None):
     valid = [i for i in items if isinstance(i, dict)]
     if not valid:
         return [], []
@@ -205,6 +218,8 @@ def parse_collection(collection_key, items):
             if state is None or state == "":
                 state = raw.get("end") or raw.get("start") or raw.get("date")
             slug = slugify(item_name)
+            if collection_key == "medications" and merges:
+                slug = merges.get(slug, slug)
             groups[slug] = (item_name, state, events[idx])
             if collection_key == "medications":
                 logs.setdefault(slug, []).append(
@@ -270,7 +285,7 @@ def metric_series(metrics):
     return series
 
 
-def medication_series(items):
+def medication_series(items, merges=None):
     groups = {}
     for item in items:
         if not isinstance(item, dict):
@@ -284,7 +299,10 @@ def medication_series(items):
         when = parse_date(item.get("date") or item.get("scheduledDate"))
         if when is None:
             continue
-        group = groups.setdefault(slugify(name), {"name": name.strip(), "points": []})
+        slug = slugify(name)
+        if merges:
+            slug = merges.get(slug, slug)
+        group = groups.setdefault(slug, {"name": name.strip(), "points": []})
         group["points"].append((when, 1.0))
     series = []
     for slug, group in groups.items():

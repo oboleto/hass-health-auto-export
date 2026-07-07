@@ -14,5 +14,18 @@
     "create_entry": {
       "default": "In the Health Auto Export app, create a REST API automation for each data type you want to sync and point it to:\n\n`{webhook_url}`\n\nUse the JSON export format. See [the documentation]({docs_url}) for details."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Health Auto Export options",
+        "data": {
+          "medication_merges": "Medication merge rules"
+        },
+        "data_description": {
+          "medication_merges": "One rule per line: `source name = target name`. Doses of the source medication are counted under the target (sensor, records and statistics). Names are normalized, so you can paste the display text as-is."
+        }
+      }
+    }
   }
 }

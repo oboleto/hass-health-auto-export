@@ -14,5 +14,18 @@
     "create_entry": {
       "default": "No app Health Auto Export, crie uma automação REST API para cada tipo de dado que quiser sincronizar e aponte para:\n\n`{webhook_url}`\n\nUse o formato de exportação JSON. Veja [a documentação]({docs_url}) para detalhes."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opções do Health Auto Export",
+        "data": {
+          "medication_merges": "Regras de merge de medicamentos"
+        },
+        "data_description": {
+          "medication_merges": "Uma regra por linha: `nome de origem = nome de destino`. As doses do medicamento de origem passam a contar no destino (sensor, registros e estatísticas). Os nomes são normalizados, então pode colar o texto exibido no app."
+        }
+      }
+    }
   }
 }
