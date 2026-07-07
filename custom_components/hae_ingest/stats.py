@@ -57,6 +57,7 @@ async def _import_series(hass: HomeAssistant, series) -> None:
         )
     except ImportError:
         pass
+    metadata.setdefault("unit_class", None)
     if is_sum:
         stats = await _sum_stats(hass, statistic_id, buckets)
     else:
