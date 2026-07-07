@@ -220,6 +220,33 @@ def parse_merge_rules(text):
     return rules
 
 
+def _medication_extra(raw):
+    extra = {}
+    codings = raw.get("codings")
+    if isinstance(codings, list):
+        codes = [
+            {"code": c.get("code"), "system": c.get("system")}
+            for c in codings
+            if isinstance(c, dict) and c.get("code")
+        ]
+        if codes:
+            extra["medication_codes"] = codes
+            rxnorm = next(
+                (
+                    c["code"]
+                    for c in codes
+                    if "rxnorm" in (c.get("system") or "").lower()
+                ),
+                None,
+            )
+            if rxnorm:
+                extra["rxnorm_code"] = rxnorm
+    archived = bool(raw.get("isArchived"))
+    extra["archived"] = archived
+    extra["active"] = not archived and not raw.get("end")
+    return extra
+
+
 def parse_collection(collection_key, items, merges=None):
     valid = [i for i in items if isinstance(i, dict)]
     if not valid:
@@ -252,7 +279,7 @@ def parse_collection(collection_key, items, merges=None):
             slug = slugify(item_name)
             if collection_key == "medications" and merges:
                 slug = merges.get(slug, slug)
-            groups[slug] = (item_name, state, events[idx])
+            groups[slug] = (item_name, state, events[idx], raw)
             log_entry = {
                 "date": next(
                     (raw.get(f) for f in date_fields if raw.get(f)), None
@@ -262,8 +289,10 @@ def parse_collection(collection_key, items, merges=None):
             if _is_number(raw.get("dosage")):
                 log_entry["dosage"] = raw["dosage"]
             logs.setdefault(slug, []).append(log_entry)
-        for slug, (item_name, state, item_attrs) in groups.items():
+        for slug, (item_name, state, item_attrs, raw) in groups.items():
             extra = {"item_name": item_name}
+            if collection_key == "medications":
+                extra.update(_medication_extra(raw))
             if slug in logs:
                 extra["recent_records"] = logs[slug][-20:]
             records.append(
