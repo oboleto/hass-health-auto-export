@@ -16,6 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, OPTION_SENSORS, SIGNAL_UPDATE
+from .parser import COLLECTIONS
 
 EXCLUDED_RESTORE_ATTRS = {
     "unit_of_measurement",
@@ -23,6 +24,35 @@ EXCLUDED_RESTORE_ATTRS = {
     "state_class",
     "device_class",
     "icon",
+}
+
+_ITEM_SINGULARS = tuple(COLLECTIONS.values())
+_ITEM_ROLE_SUFFIXES = (
+    ("_last_dose", "last_dose"),
+    ("_last", "last"),
+    ("_doses", "doses"),
+    ("_sessions", "sessions"),
+    ("_duration", "duration"),
+    ("_energy", "energy"),
+    ("_distance", "distance"),
+    ("_occurrences", "occurrences"),
+)
+_ITEM_ROLE_NAMES = {
+    "status": "Status",
+    "last_dose": "Last dose",
+    "last": "Last seen",
+    "doses": "Doses",
+    "sessions": "Sessions",
+    "duration": "Duration",
+    "energy": "Active energy",
+    "distance": "Distance",
+    "occurrences": "Occurrences",
+}
+_STATUS_NAMES = {
+    "medication": "Status",
+    "workout": "Latest",
+    "symptom": "Severity",
+    "cycle_tracking": "Value",
 }
 
 
@@ -58,7 +88,7 @@ async def async_setup_entry(
             if record.get("device_class"):
                 meta["device_class"] = record["device_class"]
             attrs = record.get("attributes") or {}
-            if _medication_slug(key) and attrs.get("item_name"):
+            if _item_device(key) and attrs.get("item_name"):
                 meta["device_name"] = attrs["item_name"]
             entity = HealthAutoExportSensor(entry, meta, record)
             entities[key] = entity
@@ -118,14 +148,18 @@ class HealthAutoExportSensor(RestoreSensor):
         self._is_timestamp = meta.get("device_class") == "timestamp"
         if self._is_timestamp:
             self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        med_slug = _medication_slug(key)
-        if med_slug:
-            self._attr_name = "Last dose" if key.endswith("_last_dose") else "Status"
+        item = _item_device(key)
+        if item:
+            singular, slug, role = item
+            if role == "status":
+                self._attr_name = _STATUS_NAMES.get(singular, "Status")
+            else:
+                self._attr_name = _ITEM_ROLE_NAMES.get(role, role.replace("_", " ").title())
             self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, f"{entry.entry_id}_medication_{med_slug}")},
-                name=meta.get("device_name") or med_slug.replace("_", " ").title(),
+                identifiers={(DOMAIN, f"{entry.entry_id}_{singular}_{slug}")},
+                name=meta.get("device_name") or slug.replace("_", " ").title(),
                 manufacturer="HealthyApps",
-                model="Medication",
+                model=singular.replace("_", " ").title(),
                 via_device=(DOMAIN, entry.entry_id),
             )
         else:
@@ -173,10 +207,16 @@ class HealthAutoExportSensor(RestoreSensor):
             }
 
 
-def _medication_slug(key: str) -> str | None:
-    if not key.startswith("medication_"):
-        return None
-    slug = key[len("medication_"):]
-    if slug.endswith("_last_dose"):
-        slug = slug[: -len("_last_dose")]
-    return slug or None
+def _item_device(key: str):
+    for singular in _ITEM_SINGULARS:
+        prefix = f"{singular}_"
+        if not key.startswith(prefix):
+            continue
+        rest = key[len(prefix):]
+        for suffix, role in _ITEM_ROLE_SUFFIXES:
+            if suffix and rest.endswith(suffix):
+                slug = rest[: -len(suffix)]
+                if slug:
+                    return singular, slug, role
+        return singular, rest, "status"
+    return None

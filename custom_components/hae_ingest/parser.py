@@ -47,6 +47,34 @@ PER_NAME = {
     "cycleTracking": ("name", "value"),
 }
 
+ITEM_SERIES = {
+    "medications": {
+        "name_field": "displayText",
+        "date_fields": ("date", "scheduledDate"),
+        "only_status": "taken",
+        "metrics": [
+            {"suffix": "doses", "label": "doses", "unit": "count", "amount": "dosage"},
+        ],
+    },
+    "workouts": {
+        "name_field": "name",
+        "date_fields": ("start", "date", "end"),
+        "metrics": [
+            {"suffix": "sessions", "label": "sessions", "unit": "count"},
+            {"suffix": "duration", "label": "duration", "unit": "min", "value": "duration", "scale": 1 / 60},
+            {"suffix": "energy", "label": "active energy", "unit": "kcal", "value": "activeEnergyBurned"},
+            {"suffix": "distance", "label": "distance", "unit": "km", "value": "distance"},
+        ],
+    },
+    "symptoms": {
+        "name_field": "name",
+        "date_fields": ("start", "date", "end"),
+        "metrics": [
+            {"suffix": "occurrences", "label": "occurrences", "unit": "count"},
+        ],
+    },
+}
+
 NAME_OVERRIDES = {"last_ecg": "Last ECG"}
 
 SKIP_ATTR_FIELDS = {"qty", "date", "startDate", "endDate"}
@@ -208,6 +236,9 @@ def parse_collection(collection_key, items, merges=None):
     records = [_record(f"last_{singular}", None, value, attrs, state_class=None)]
     name_field, item_state_field = PER_NAME.get(collection_key, (None, None))
     if name_field:
+        date_fields = ITEM_SERIES.get(collection_key, {}).get(
+            "date_fields", ("date", "start", "end")
+        )
         groups = {}
         logs = {}
         for idx in order:
@@ -222,14 +253,15 @@ def parse_collection(collection_key, items, merges=None):
             if collection_key == "medications" and merges:
                 slug = merges.get(slug, slug)
             groups[slug] = (item_name, state, events[idx])
-            if collection_key == "medications":
-                log_entry = {
-                    "date": raw.get("date") or raw.get("scheduledDate"),
-                    "status": raw.get("status"),
-                }
-                if _is_number(raw.get("dosage")):
-                    log_entry["dosage"] = raw["dosage"]
-                logs.setdefault(slug, []).append(log_entry)
+            log_entry = {
+                "date": next(
+                    (raw.get(f) for f in date_fields if raw.get(f)), None
+                ),
+                "status": raw.get("status"),
+            }
+            if _is_number(raw.get("dosage")):
+                log_entry["dosage"] = raw["dosage"]
+            logs.setdefault(slug, []).append(log_entry)
         for slug, (item_name, state, item_attrs) in groups.items():
             extra = {"item_name": item_name}
             if slug in logs:
@@ -244,20 +276,24 @@ def parse_collection(collection_key, items, merges=None):
                 )
             )
             if slug in logs:
-                last_taken = next(
-                    (
-                        r["date"]
-                        for r in reversed(logs[slug])
-                        if isinstance(r.get("status"), str)
-                        and r["status"].lower() == "taken"
-                    ),
-                    None,
-                )
-                parsed = parse_date(last_taken)
+                if collection_key == "medications":
+                    last_when = next(
+                        (
+                            r["date"]
+                            for r in reversed(logs[slug])
+                            if isinstance(r.get("status"), str)
+                            and r["status"].lower() == "taken"
+                        ),
+                        None,
+                    )
+                else:
+                    last_when = logs[slug][-1]["date"]
+                parsed = parse_date(last_when)
                 if parsed is not None and parsed.tzinfo is not None:
+                    suffix = "last_dose" if collection_key == "medications" else "last"
                     records.append(
                         _record(
-                            f"{singular}_{slug}_last_dose",
+                            f"{singular}_{slug}_{suffix}",
                             None,
                             parsed.isoformat(),
                             {"item_name": item_name},
@@ -309,39 +345,74 @@ def metric_series(metrics):
     return series
 
 
-def medication_series(items, merges=None):
+def _numeric_value(raw):
+    if _is_number(raw):
+        return float(raw)
+    if isinstance(raw, dict) and _is_number(raw.get("qty")):
+        return float(raw["qty"])
+    return None
+
+
+def collection_series(collection_key, items, merges=None):
+    config = ITEM_SERIES.get(collection_key)
+    if not config:
+        return []
+    name_field = config["name_field"]
+    only_status = config.get("only_status")
     groups = {}
     for item in items:
         if not isinstance(item, dict):
             continue
-        status = item.get("status")
-        if isinstance(status, str) and status.lower() != "taken":
-            continue
-        name = item.get("displayText") or item.get("nickname") or item.get("name")
+        if only_status:
+            status = item.get("status")
+            if isinstance(status, str) and status.lower() != only_status:
+                continue
+        name = item.get(name_field) or item.get("nickname") or item.get("name")
         if not isinstance(name, str) or not name.strip():
             continue
-        when = parse_date(item.get("date") or item.get("scheduledDate"))
+        when = None
+        for field in config["date_fields"]:
+            when = parse_date(item.get(field))
+            if when is not None:
+                break
         if when is None:
             continue
-        dosage = item.get("dosage")
-        amount = float(dosage) if _is_number(dosage) and dosage > 0 else 1.0
         slug = slugify(name)
-        if merges:
+        if merges and collection_key == "medications":
             slug = merges.get(slug, slug)
-        group = groups.setdefault(slug, {"name": name.strip(), "points": []})
-        group["points"].append((when, amount))
+        group = groups.setdefault(slug, {"name": name.strip(), "metrics": {}})
+        for metric in config["metrics"]:
+            if "value" in metric:
+                amount = _numeric_value(item.get(metric["value"]))
+                if amount is None:
+                    continue
+                amount *= metric.get("scale", 1)
+            elif "amount" in metric:
+                raw = item.get(metric["amount"])
+                amount = float(raw) if _is_number(raw) and raw > 0 else 1.0
+            else:
+                amount = 1.0
+            group["metrics"].setdefault(metric["suffix"], []).append((when, amount))
     series = []
+    prefix = COLLECTIONS[collection_key]
+    labels = {m["suffix"]: (m["label"], m["unit"]) for m in config["metrics"]}
     for slug, group in groups.items():
-        group["points"].sort(key=lambda p: _safe_ts(p[0]))
-        series.append(
-            {
-                "key": f"medication_{slug}",
-                "name": f"{group['name']} (doses)",
-                "unit": "count",
-                "points": group["points"],
-            }
-        )
+        for suffix, points in group["metrics"].items():
+            points.sort(key=lambda p: _safe_ts(p[0]))
+            label, unit = labels[suffix]
+            series.append(
+                {
+                    "key": f"{prefix}_{slug}_{suffix}",
+                    "name": f"{group['name']} ({label})",
+                    "unit": unit,
+                    "points": points,
+                }
+            )
     return series
+
+
+def medication_series(items, merges=None):
+    return collection_series("medications", items, merges)
 
 
 def _safe_ts(when):

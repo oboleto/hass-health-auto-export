@@ -16,7 +16,7 @@ from homeassistant.helpers.event import async_call_later
 from .const import DOMAIN, EVENT_PREFIX, OPTION_MEDICATION_MERGES, SIGNAL_UPDATE
 from .parser import (
     COLLECTIONS,
-    medication_series,
+    collection_series,
     metric_series,
     parse_collection,
     parse_merge_rules,
@@ -97,8 +97,7 @@ async def handle_webhook(hass: HomeAssistant, webhook_id: str, request) -> web.R
             for event_data in events:
                 hass.bus.async_fire(f"{EVENT_PREFIX}{singular}", event_data)
             records.extend(collection_records)
-            if collection_key == "medications":
-                _buffer_metric_series(hass, medication_series(items, merges))
+            _buffer_metric_series(hass, collection_series(collection_key, items, merges))
     if records:
         async_dispatcher_send(hass, SIGNAL_UPDATE, records)
     if _LOGGER.isEnabledFor(logging.DEBUG):
