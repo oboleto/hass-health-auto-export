@@ -195,6 +195,7 @@ def parse_collection(collection_key, items):
     name_field, item_state_field = PER_NAME.get(collection_key, (None, None))
     if name_field:
         groups = {}
+        logs = {}
         for idx in order:
             raw = valid[idx]
             item_name = raw.get(name_field) or raw.get("nickname")
@@ -203,14 +204,25 @@ def parse_collection(collection_key, items):
             state = raw.get(item_state_field) if item_state_field else None
             if state is None or state == "":
                 state = raw.get("end") or raw.get("start") or raw.get("date")
-            groups[slugify(item_name)] = (item_name, state, events[idx])
+            slug = slugify(item_name)
+            groups[slug] = (item_name, state, events[idx])
+            if collection_key == "medications":
+                logs.setdefault(slug, []).append(
+                    {
+                        "date": raw.get("date") or raw.get("scheduledDate"),
+                        "status": raw.get("status"),
+                    }
+                )
         for slug, (item_name, state, item_attrs) in groups.items():
+            extra = {"item_name": item_name}
+            if slug in logs:
+                extra["recent_records"] = logs[slug][-20:]
             records.append(
                 _record(
                     f"{singular}_{slug}",
                     None,
                     state,
-                    {**item_attrs, "item_name": item_name},
+                    {**item_attrs, **extra},
                     state_class=None,
                 )
             )
