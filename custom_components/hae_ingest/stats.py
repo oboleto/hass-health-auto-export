@@ -49,6 +49,14 @@ async def _import_series(hass: HomeAssistant, series) -> None:
         has_mean=not is_sum,
         has_sum=is_sum,
     )
+    try:
+        from homeassistant.components.recorder.models import StatisticMeanType
+
+        metadata["mean_type"] = (
+            StatisticMeanType.NONE if is_sum else StatisticMeanType.ARITHMETIC
+        )
+    except ImportError:
+        pass
     if is_sum:
         stats = await _sum_stats(hass, statistic_id, buckets)
     else:

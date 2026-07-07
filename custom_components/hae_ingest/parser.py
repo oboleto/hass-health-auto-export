@@ -12,7 +12,13 @@ COLLECTIONS = {
     "medications": "medication",
 }
 
-DATE_FORMATS = ("%Y-%m-%d %H:%M:%S %z", "%Y-%m-%d %H:%M:%S.%f %z", "%Y-%m-%d")
+DATE_FORMATS = (
+    "%Y-%m-%d %H:%M:%S %z",
+    "%Y-%m-%d %H:%M:%S.%f %z",
+    "%Y-%m-%d %I:%M:%S %p %z",
+    "%Y-%m-%d %I:%M %p %z",
+    "%Y-%m-%d",
+)
 
 UNIT_MAP = {"degC": "°C", "degF": "°F"}
 
