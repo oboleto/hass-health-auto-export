@@ -159,7 +159,12 @@ def _buffer_metric_series(hass: HomeAssistant, entry_id: str, series_list) -> No
     for series in series_list:
         buffered = domain_data["series"].setdefault(
             series["key"],
-            {"name": series["name"], "unit": series.get("unit"), "points": []},
+            {
+                "name": series["name"],
+                "unit": series.get("unit"),
+                "kind": series.get("kind"),
+                "points": [],
+            },
         )
         buffered["points"].extend(series["points"])
         if not buffered.get("unit") and series.get("unit"):
@@ -177,6 +182,6 @@ def _buffer_metric_series(hass: HomeAssistant, entry_id: str, series_list) -> No
             {s["key"]: len(s["points"]) for s in flush_list},
         )
         async with domain_data["lock"]:
-            await async_import_metric_statistics(hass, flush_list)
+            await async_import_metric_statistics(hass, entry_id, flush_list)
 
     domain_data["flush_unsub"] = async_call_later(hass, FLUSH_DELAY, _flush)

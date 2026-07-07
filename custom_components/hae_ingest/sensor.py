@@ -145,8 +145,13 @@ class HealthAutoExportSensor(RestoreSensor):
         self._attr_unique_id = f"{entry.entry_id}_{key}"
         self._attr_name = meta.get("name") or key
         self._attr_native_unit_of_measurement = meta.get("unit")
-        if meta.get("state_class") == "measurement":
+        state_class = meta.get("state_class")
+        if state_class == "measurement":
             self._attr_state_class = SensorStateClass.MEASUREMENT
+        elif state_class == "total_increasing":
+            self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        elif state_class == "total":
+            self._attr_state_class = SensorStateClass.TOTAL
         self._is_timestamp = meta.get("device_class") == "timestamp"
         if self._is_timestamp:
             self._attr_device_class = SensorDeviceClass.TIMESTAMP

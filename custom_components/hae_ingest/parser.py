@@ -2,6 +2,23 @@ from __future__ import annotations
 
 from datetime import datetime
 
+SUM_UNITS = {
+    "count",
+    "kcal",
+    "kJ",
+    "km",
+    "mi",
+    "m",
+    "ft",
+    "yd",
+    "L",
+    "mL",
+    "IU",
+    "g",
+    "mg",
+    "µg",
+}
+
 COLLECTIONS = {
     "workouts": "workout",
     "symptoms": "symptom",
@@ -138,6 +155,11 @@ def parse_metrics(metrics):
         records.extend(
             r for r in _metric_records(name, unit, point, len(points)) if r["value"] is not None
         )
+    for record in records:
+        if record.get("state_class"):
+            record["state_class"] = (
+                "total_increasing" if record.get("unit") in SUM_UNITS else "measurement"
+            )
     return records
 
 
@@ -369,6 +391,7 @@ def metric_series(metrics):
                     "name": name.replace("_", " ").title(),
                     "unit": unit,
                     "points": points,
+                    "kind": "metric",
                 }
             )
     return series
@@ -435,6 +458,7 @@ def collection_series(collection_key, items, merges=None):
                     "name": f"{group['name']} ({label})",
                     "unit": unit,
                     "points": points,
+                    "kind": "collection",
                 }
             )
     return series

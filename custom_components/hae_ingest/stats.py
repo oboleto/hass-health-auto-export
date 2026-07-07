@@ -10,9 +10,15 @@ from homeassistant.components.recorder.statistics import (
     statistics_during_period,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
+
+try:
+    from homeassistant.components.recorder.statistics import async_import_statistics
+except ImportError:  # pragma: no cover
+    async_import_statistics = None
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,12 +27,14 @@ SUM_UNITS = {"count", "kcal", "kJ", "km", "mi", "m", "ft", "yd", "L", "mL", "IU"
 EPOCH = datetime(1970, 1, 2, tzinfo=timezone.utc)
 
 
-async def async_import_metric_statistics(hass: HomeAssistant, series_list) -> None:
+async def async_import_metric_statistics(
+    hass: HomeAssistant, entry_id: str, series_list
+) -> None:
     if not series_list or "recorder" not in hass.config.components:
         return
     for series in series_list:
         try:
-            await _import_series(hass, series)
+            await _import_series(hass, entry_id, series)
         except Exception:
             _LOGGER.exception("Failed to import statistics for %s", series["key"])
     try:
@@ -35,16 +43,28 @@ async def async_import_metric_statistics(hass: HomeAssistant, series_list) -> No
         _LOGGER.debug("Could not wait for recorder queue drain", exc_info=True)
 
 
-async def _import_series(hass: HomeAssistant, series) -> None:
+async def _import_series(hass: HomeAssistant, entry_id: str, series) -> None:
     buckets = _hourly_buckets(series["points"])
     if not buckets:
         return
-    statistic_id = f"{DOMAIN}:{series['key']}"
     is_sum = series.get("unit") in SUM_UNITS
+    entity_id = None
+    if series.get("kind") == "metric" and async_import_statistics is not None:
+        entity_id = er.async_get(hass).async_get_entity_id(
+            "sensor", DOMAIN, f"{entry_id}_{series['key']}"
+        )
+    if entity_id:
+        statistic_id = entity_id
+        source = "recorder"
+        name = None
+    else:
+        statistic_id = f"{DOMAIN}:{series['key']}"
+        source = DOMAIN
+        name = series["name"]
     metadata = StatisticMetaData(
-        source=DOMAIN,
+        source=source,
         statistic_id=statistic_id,
-        name=series["name"],
+        name=name,
         unit_of_measurement=series.get("unit"),
         has_mean=not is_sum,
         has_sum=is_sum,
@@ -70,18 +90,23 @@ async def _import_series(hass: HomeAssistant, series) -> None:
             )
             for start, values in buckets.items()
         ]
-    if stats:
-        _LOGGER.debug(
-            "Importing %d statistic rows for %s as %s (%s .. %s)",
-            len(stats),
-            statistic_id,
-            "sum" if is_sum else "mean",
-            stats[0]["start"],
-            stats[-1]["start"],
-        )
-        async_add_external_statistics(hass, metadata, stats)
-    else:
+    if not stats:
         _LOGGER.debug("No statistic rows to import for %s", statistic_id)
+        return
+    _LOGGER.debug(
+        "Importing %d statistic rows for %s (%s, %s) as %s (%s .. %s)",
+        len(stats),
+        statistic_id,
+        source,
+        series.get("kind"),
+        "sum" if is_sum else "mean",
+        stats[0]["start"],
+        stats[-1]["start"],
+    )
+    if source == "recorder":
+        async_import_statistics(hass, metadata, stats)
+    else:
+        async_add_external_statistics(hass, metadata, stats)
 
 
 async def _sum_stats(hass: HomeAssistant, statistic_id: str, buckets) -> list[StatisticData]:
