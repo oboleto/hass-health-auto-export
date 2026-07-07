@@ -1,8 +1,9 @@
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.components import webhook
+from homeassistant.const import CONF_WEBHOOK_ID
 from homeassistant.core import callback
-from homeassistant.helpers.config_entry_flow import WebhookFlowHandler
 from homeassistant.helpers.selector import (
     SelectOptionDict,
     SelectSelector,
@@ -10,19 +11,51 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
 )
 
-from .const import DOMAIN, OPTION_MEDICATION_MERGES, OPTION_SENSORS
+from .const import (
+    CONF_DATA_TYPE,
+    DATA_TYPES,
+    DOMAIN,
+    OPTION_MEDICATION_MERGES,
+    OPTION_SENSORS,
+)
 from .parser import parse_merge_rules, slugify
 
 
-@config_entries.HANDLERS.register(DOMAIN)
-class HaeIngestFlowHandler(WebhookFlowHandler):
-    def __init__(self) -> None:
-        super().__init__(
-            DOMAIN,
-            "Health Auto Export Ingest",
-            {"docs_url": "https://github.com/oboleto/hass-health-auto-export"},
-            False,
+class HaeIngestConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    VERSION = 1
+
+    async def async_step_user(self, user_input=None):
+        configured = {
+            entry.data.get(CONF_DATA_TYPE) for entry in self._async_current_entries()
+        }
+        available = {k: v for k, v in DATA_TYPES.items() if k not in configured}
+        if not available:
+            return self.async_abort(reason="all_configured")
+        if user_input is not None:
+            data_type = user_input[CONF_DATA_TYPE]
+            await self.async_set_unique_id(data_type)
+            self._abort_if_unique_id_configured()
+            return self.async_create_entry(
+                title=DATA_TYPES.get(data_type, data_type),
+                data={
+                    CONF_DATA_TYPE: data_type,
+                    CONF_WEBHOOK_ID: webhook.async_generate_id(),
+                },
+            )
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_DATA_TYPE): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[
+                            SelectOptionDict(value=k, label=v)
+                            for k, v in available.items()
+                        ],
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                )
+            }
         )
+        return self.async_show_form(step_id="user", data_schema=schema)
 
     @staticmethod
     @callback
@@ -43,6 +76,8 @@ def current_merge_rules(options) -> dict:
 
 class HaeIngestOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
+        if self.config_entry.data.get(CONF_DATA_TYPE) not in (None, "medications"):
+            return self.async_abort(reason="no_options")
         options = dict(self.config_entry.options)
         rules = current_merge_rules(options)
         names = self._medication_names()

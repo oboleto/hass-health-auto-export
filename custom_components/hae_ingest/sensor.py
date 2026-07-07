@@ -15,7 +15,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, OPTION_SENSORS, SIGNAL_UPDATE
+from .const import CONF_DATA_TYPE, DATA_TYPES, DOMAIN, OPTION_SENSORS, SIGNAL_UPDATE
 from .parser import COLLECTIONS
 
 EXCLUDED_RESTORE_ATTRS = {
@@ -104,7 +104,9 @@ async def async_setup_entry(
             )
 
     entry.async_on_unload(
-        async_dispatcher_connect(hass, SIGNAL_UPDATE, _handle_records)
+        async_dispatcher_connect(
+            hass, f"{SIGNAL_UPDATE}_{entry.entry_id}", _handle_records
+        )
     )
 
 
@@ -120,7 +122,7 @@ class WebhookUrlSensor(SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_webhook_url"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name="Health Auto Export",
+            name=_main_device_name(entry),
             manufacturer="HealthyApps",
             model="Health Auto Export",
         )
@@ -165,7 +167,7 @@ class HealthAutoExportSensor(RestoreSensor):
         else:
             self._attr_device_info = DeviceInfo(
                 identifiers={(DOMAIN, entry.entry_id)},
-                name="Health Auto Export",
+                name=_main_device_name(entry),
                 manufacturer="HealthyApps",
                 model="Health Auto Export",
             )
@@ -205,6 +207,13 @@ class HealthAutoExportSensor(RestoreSensor):
                 for k, v in state.attributes.items()
                 if k not in EXCLUDED_RESTORE_ATTRS
             }
+
+
+def _main_device_name(entry: ConfigEntry) -> str:
+    data_type = entry.data.get(CONF_DATA_TYPE)
+    if data_type:
+        return f"Health Auto Export {DATA_TYPES.get(data_type, data_type)}"
+    return "Health Auto Export"
 
 
 def _item_device(key: str):

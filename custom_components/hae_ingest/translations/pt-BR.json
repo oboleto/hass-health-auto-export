@@ -3,16 +3,15 @@
     "step": {
       "user": {
         "title": "Health Auto Export",
-        "description": "Deseja configurar o webhook do Health Auto Export?"
+        "description": "Adicione uma integração por tipo de dado. No app, crie uma automação separada para cada tipo e aponte para a URL de webhook desta instância (mostrada no dispositivo criado).",
+        "data": {
+          "data_type": "Tipo de dado"
+        }
       }
     },
     "abort": {
-      "single_instance_allowed": "Já configurado. Apenas uma configuração é possível.",
-      "cloud_not_connected": "Não conectado ao Home Assistant Cloud.",
-      "webhook_not_internet_accessible": "Sua instância do Home Assistant precisa estar acessível para receber mensagens de webhook."
-    },
-    "create_entry": {
-      "default": "No app Health Auto Export, crie uma automação REST API para cada tipo de dado que quiser sincronizar e aponte para:\n\n`{webhook_url}`\n\nUse o formato de exportação JSON. Veja [a documentação]({docs_url}) para detalhes."
+      "all_configured": "Todos os tipos de dado já estão configurados.",
+      "already_configured": "Este tipo de dado já está configurado."
     }
   },
   "options": {
@@ -30,6 +29,9 @@
           "target": "Onde as doses da origem devem ser contadas."
         }
       }
+    },
+    "abort": {
+      "no_options": "Este tipo de dado não tem opções."
     }
   }
 }
