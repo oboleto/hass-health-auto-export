@@ -81,7 +81,7 @@ def _timestamp(item):
     return float("-inf")
 
 
-def _record(key, unit, value, attrs, state_class="measurement"):
+def _record(key, unit, value, attrs, state_class="measurement", device_class=None):
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         state_class = None
     name = NAME_OVERRIDES.get(key, key.replace("_", " ").title())
@@ -92,6 +92,7 @@ def _record(key, unit, value, attrs, state_class="measurement"):
         "value": value,
         "attributes": attrs,
         "state_class": state_class,
+        "device_class": device_class,
     }
 
 
@@ -241,6 +242,28 @@ def parse_collection(collection_key, items, merges=None):
                     state_class=None,
                 )
             )
+            if slug in logs:
+                last_taken = next(
+                    (
+                        r["date"]
+                        for r in reversed(logs[slug])
+                        if isinstance(r.get("status"), str)
+                        and r["status"].lower() == "taken"
+                    ),
+                    None,
+                )
+                parsed = parse_date(last_taken)
+                if parsed is not None and parsed.tzinfo is not None:
+                    records.append(
+                        _record(
+                            f"{singular}_{slug}_last_dose",
+                            None,
+                            parsed.isoformat(),
+                            {"item_name": item_name},
+                            state_class=None,
+                            device_class="timestamp",
+                        )
+                    )
     return events, [r for r in records if r["value"] is not None]
 
 

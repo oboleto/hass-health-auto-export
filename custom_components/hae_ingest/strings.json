@@ -18,12 +18,16 @@
   "options": {
     "step": {
       "init": {
-        "title": "Health Auto Export options",
+        "title": "Medication merges",
+        "description": "Merge duplicate medications into one. Doses of the source are counted under the target (device, records and statistics).",
         "data": {
-          "medication_merges": "Medication merge rules"
+          "remove": "Remove existing rules",
+          "source": "Source medication (duplicate)",
+          "target": "Target medication (keep)"
         },
         "data_description": {
-          "medication_merges": "One rule per line: `source name = target name`. Doses of the source medication are counted under the target (sensor, records and statistics). Names are normalized, so you can paste the display text as-is."
+          "source": "Pick from known medications or type a name.",
+          "target": "Where the source's doses should be counted."
         }
       }
     }

@@ -112,7 +112,15 @@ async def handle_webhook(hass: HomeAssistant, webhook_id: str, request) -> web.R
 
 def _medication_merges(hass: HomeAssistant):
     for entry in hass.config_entries.async_entries(DOMAIN):
-        rules = parse_merge_rules(entry.options.get(OPTION_MEDICATION_MERGES))
+        raw = entry.options.get(OPTION_MEDICATION_MERGES)
+        if isinstance(raw, dict):
+            rules = {
+                slugify(k): slugify(v)
+                for k, v in raw.items()
+                if slugify(k) and slugify(v) and slugify(k) != slugify(v)
+            }
+        else:
+            rules = parse_merge_rules(raw)
         if rules:
             return rules
     return None

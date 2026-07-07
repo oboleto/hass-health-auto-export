@@ -3,6 +3,7 @@ from __future__ import annotations
 from homeassistant.components import webhook
 from homeassistant.components.sensor import (
     RestoreSensor,
+    SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
@@ -12,6 +13,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, OPTION_SENSORS, SIGNAL_UPDATE
 
@@ -53,6 +55,11 @@ async def async_setup_entry(
                 "unit": record.get("unit"),
                 "state_class": record.get("state_class"),
             }
+            if record.get("device_class"):
+                meta["device_class"] = record["device_class"]
+            attrs = record.get("attributes") or {}
+            if _medication_slug(key) and attrs.get("item_name"):
+                meta["device_name"] = attrs["item_name"]
             entity = HealthAutoExportSensor(entry, meta, record)
             entities[key] = entity
             new_entities.append(entity)
@@ -102,17 +109,32 @@ class HealthAutoExportSensor(RestoreSensor):
 
     def __init__(self, entry: ConfigEntry, meta: dict, record: dict | None = None) -> None:
         self.meta = meta
-        self._attr_unique_id = f"{entry.entry_id}_{meta['key']}"
-        self._attr_name = meta.get("name") or meta["key"]
+        key = meta["key"]
+        self._attr_unique_id = f"{entry.entry_id}_{key}"
+        self._attr_name = meta.get("name") or key
         self._attr_native_unit_of_measurement = meta.get("unit")
         if meta.get("state_class") == "measurement":
             self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Health Auto Export",
-            manufacturer="HealthyApps",
-            model="Health Auto Export",
-        )
+        self._is_timestamp = meta.get("device_class") == "timestamp"
+        if self._is_timestamp:
+            self._attr_device_class = SensorDeviceClass.TIMESTAMP
+        med_slug = _medication_slug(key)
+        if med_slug:
+            self._attr_name = "Last dose" if key.endswith("_last_dose") else "Status"
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, f"{entry.entry_id}_medication_{med_slug}")},
+                name=meta.get("device_name") or med_slug.replace("_", " ").title(),
+                manufacturer="HealthyApps",
+                model="Medication",
+                via_device=(DOMAIN, entry.entry_id),
+            )
+        else:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, entry.entry_id)},
+                name="Health Auto Export",
+                manufacturer="HealthyApps",
+                model="Health Auto Export",
+            )
         self._attr_extra_state_attributes = {}
         if record is not None:
             self._apply(record)
@@ -121,6 +143,8 @@ class HealthAutoExportSensor(RestoreSensor):
         value = record.get("value")
         if isinstance(value, float):
             value = round(value, 4)
+        if self._is_timestamp and isinstance(value, str):
+            value = dt_util.parse_datetime(value)
         self._attr_native_value = value
         self._attr_extra_state_attributes = record.get("attributes") or {}
 
@@ -136,7 +160,10 @@ class HealthAutoExportSensor(RestoreSensor):
             return
         sensor_data = await self.async_get_last_sensor_data()
         if sensor_data is not None:
-            self._attr_native_value = sensor_data.native_value
+            value = sensor_data.native_value
+            if self._is_timestamp and isinstance(value, str):
+                value = dt_util.parse_datetime(value)
+            self._attr_native_value = value
         state = await self.async_get_last_state()
         if state is not None:
             self._attr_extra_state_attributes = {
@@ -144,3 +171,12 @@ class HealthAutoExportSensor(RestoreSensor):
                 for k, v in state.attributes.items()
                 if k not in EXCLUDED_RESTORE_ATTRS
             }
+
+
+def _medication_slug(key: str) -> str | None:
+    if not key.startswith("medication_"):
+        return None
+    slug = key[len("medication_"):]
+    if slug.endswith("_last_dose"):
+        slug = slug[: -len("_last_dose")]
+    return slug or None

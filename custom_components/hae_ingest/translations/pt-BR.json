@@ -18,12 +18,16 @@
   "options": {
     "step": {
       "init": {
-        "title": "Opções do Health Auto Export",
+        "title": "Merge de medicamentos",
+        "description": "Junte medicamentos duplicados em um só. As doses da origem passam a contar no destino (dispositivo, registros e estatísticas).",
         "data": {
-          "medication_merges": "Regras de merge de medicamentos"
+          "remove": "Remover regras existentes",
+          "source": "Medicamento de origem (duplicado)",
+          "target": "Medicamento de destino (manter)"
         },
         "data_description": {
-          "medication_merges": "Uma regra por linha: `nome de origem = nome de destino`. As doses do medicamento de origem passam a contar no destino (sensor, registros e estatísticas). Os nomes são normalizados, então pode colar o texto exibido no app."
+          "source": "Escolha entre os medicamentos conhecidos ou digite um nome.",
+          "target": "Onde as doses da origem devem ser contadas."
         }
       }
     }
