@@ -21,12 +21,14 @@ from .const import (
 )
 from .parser import (
     COLLECTIONS,
+    annotate_heart_rate_notifications,
     collection_series,
     metric_series,
     parse_collection,
     parse_merge_rules,
     parse_metrics,
     slugify,
+    state_of_mind_series,
 )
 from .stats import async_import_metric_statistics
 
@@ -116,6 +118,8 @@ async def handle_webhook(hass: HomeAssistant, webhook_id: str, request) -> web.R
             continue
         items = data.get(collection_key)
         if isinstance(items, list) and items:
+            if collection_key == "heartRateNotifications":
+                annotate_heart_rate_notifications(items)
             merges = _entry_merges(entry) if collection_key == "medications" else None
             events, collection_records = parse_collection(collection_key, items, merges)
             for event_data in events:
@@ -124,6 +128,10 @@ async def handle_webhook(hass: HomeAssistant, webhook_id: str, request) -> web.R
             _buffer_metric_series(
                 hass, entry.entry_id, collection_series(collection_key, items, merges)
             )
+            if collection_key == "stateOfMind":
+                _buffer_metric_series(
+                    hass, entry.entry_id, state_of_mind_series(items)
+                )
     if records:
         async_dispatcher_send(hass, f"{SIGNAL_UPDATE}_{entry.entry_id}", records)
     if _LOGGER.isEnabledFor(logging.DEBUG):

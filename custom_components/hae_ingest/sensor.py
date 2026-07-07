@@ -53,6 +53,8 @@ _STATUS_NAMES = {
     "workout": "Latest",
     "symptom": "Severity",
     "cycle_tracking": "Value",
+    "ecg": "Last reading",
+    "heart_rate_notification": "Last event",
 }
 
 

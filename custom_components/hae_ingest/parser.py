@@ -55,6 +55,8 @@ STATE_FIELDS = {
     "ecg": "classification",
     "stateOfMind": "valence",
     "medications": "displayText",
+    "heartRateNotifications": "type",
+    "cycleTracking": "name",
 }
 
 PER_NAME = {
@@ -62,6 +64,8 @@ PER_NAME = {
     "symptoms": ("name", "severity"),
     "medications": ("displayText", "status"),
     "cycleTracking": ("name", "value"),
+    "ecg": ("classification", None),
+    "heartRateNotifications": ("type", None),
 }
 
 ITEM_SERIES = {
@@ -79,8 +83,8 @@ ITEM_SERIES = {
         "metrics": [
             {"suffix": "sessions", "label": "sessions", "unit": "count"},
             {"suffix": "duration", "label": "duration", "unit": "min", "value": "duration", "scale": 1 / 60},
-            {"suffix": "energy", "label": "active energy", "unit": "kcal", "value": "activeEnergyBurned"},
-            {"suffix": "distance", "label": "distance", "unit": "km", "value": "distance"},
+            {"suffix": "energy", "label": "active energy", "unit": "kcal", "value": ["activeEnergyBurned", "activeEnergy"]},
+            {"suffix": "distance", "label": "distance", "unit": "km", "value": "distance", "unit_from": True},
         ],
     },
     "symptoms": {
@@ -88,6 +92,20 @@ ITEM_SERIES = {
         "date_fields": ("start", "date", "end"),
         "metrics": [
             {"suffix": "occurrences", "label": "occurrences", "unit": "count"},
+        ],
+    },
+    "ecg": {
+        "name_field": "classification",
+        "date_fields": ("start", "date", "end"),
+        "metrics": [
+            {"suffix": "readings", "label": "readings", "unit": "count"},
+        ],
+    },
+    "heartRateNotifications": {
+        "name_field": "type",
+        "date_fields": ("start", "date", "end"),
+        "metrics": [
+            {"suffix": "events", "label": "events", "unit": "count"},
         ],
     },
 }
@@ -211,6 +229,8 @@ def compact_item(item):
         if isinstance(value, list):
             if value and all(isinstance(v, str) for v in value):
                 out[slug] = value
+            elif value and all(isinstance(v, dict) for v in value):
+                _summarize_measurements(out, slug, value)
             continue
         if isinstance(value, dict):
             if "qty" in value:
@@ -227,6 +247,60 @@ def compact_item(item):
             continue
         out[slug] = value
     return out
+
+
+def _summarize_measurements(out, slug, items):
+    for field in ("hr", "hrv"):
+        values = [i[field] for i in items if _is_number(i.get(field))]
+        if values:
+            out[f"{slug}_min"] = min(values)
+            out[f"{slug}_avg"] = round(sum(values) / len(values), 2)
+            out[f"{slug}_max"] = max(values)
+
+
+def _hrn_type(item):
+    threshold = item.get("threshold")
+    if not _is_number(threshold):
+        return "Irregular Rhythm"
+    hrs = [
+        v["hr"]
+        for v in item.get("heartRate") or []
+        if isinstance(v, dict) and _is_number(v.get("hr"))
+    ]
+    if hrs and sum(hrs) / len(hrs) < threshold:
+        return "Low Heart Rate"
+    return "High Heart Rate"
+
+
+def annotate_heart_rate_notifications(items):
+    for item in items:
+        if isinstance(item, dict) and not item.get("type"):
+            item["type"] = _hrn_type(item)
+    return items
+
+
+def state_of_mind_series(items):
+    points = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        when = parse_date(item.get("start") or item.get("date") or item.get("end"))
+        valence = item.get("valence")
+        if when is not None and _is_number(valence):
+            points.append((when, float(valence)))
+    if not points:
+        return []
+    points.sort(key=lambda p: _safe_ts(p[0]))
+    return [
+        {
+            "key": "mood_valence",
+            "name": "Mood Valence",
+            "unit": None,
+            "points": points,
+            "kind": "metric",
+        }
+    ]
+
 
 
 def parse_merge_rules(text):
@@ -352,6 +426,18 @@ def parse_collection(collection_key, items, merges=None):
                             device_class="timestamp",
                         )
                     )
+    if collection_key == "stateOfMind":
+        latest_valence = valid[order[-1]].get("valence")
+        if _is_number(latest_valence):
+            records.append(
+                _record(
+                    "mood_valence",
+                    None,
+                    float(latest_valence),
+                    {"item_name": "Mood valence"},
+                    state_class="measurement",
+                )
+            )
     return events, [r for r in records if r["value"] is not None]
 
 
@@ -412,6 +498,7 @@ def collection_series(collection_key, items, merges=None):
     name_field = config["name_field"]
     only_status = config.get("only_status")
     groups = {}
+    unit_overrides = {}
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -435,7 +522,21 @@ def collection_series(collection_key, items, merges=None):
         group = groups.setdefault(slug, {"name": name.strip(), "metrics": {}})
         for metric in config["metrics"]:
             if "value" in metric:
-                amount = _numeric_value(item.get(metric["value"]))
+                candidates = (
+                    metric["value"]
+                    if isinstance(metric["value"], (list, tuple))
+                    else (metric["value"],)
+                )
+                amount = None
+                for candidate in candidates:
+                    raw = item.get(candidate)
+                    amount = _numeric_value(raw)
+                    if amount is not None:
+                        if metric.get("unit_from") and isinstance(raw, dict):
+                            found = raw.get("units")
+                            if isinstance(found, str) and found:
+                                unit_overrides[metric["suffix"]] = UNIT_MAP.get(found, found)
+                        break
                 if amount is None:
                     continue
                 amount *= metric.get("scale", 1)
@@ -456,7 +557,7 @@ def collection_series(collection_key, items, merges=None):
                 {
                     "key": f"{prefix}_{slug}_{suffix}",
                     "name": f"{group['name']} ({label})",
-                    "unit": unit,
+                    "unit": unit_overrides.get(suffix, unit),
                     "points": points,
                     "kind": "collection",
                 }
